@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>成語配對遊戲</title>
+    <!-- 載入 Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* 自訂樣式 */
+        
+        /* 正在拖曳的元素 */
+        .dragging {
+            opacity: 0.5;
+            transform: scale(0.95);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+        
+        /* 拖曳經過的放置區 */
+        .drag-over {
+            background-color: #ebf8ff; /* light blue */
+            border-color: #3182ce; /* blue */
+        }
+        
+        /* 配對正確的卡片 */
+        .matched-card {
+            background-color: #c6f6d5; /* light green */
+            border-color: #38a169; /* green */
+            cursor: not-allowed;
+        }
+        
+        /* 配對正確的放置區 */
+        .matched-zone {
+            border-color: #38a169; /* green */
+            background-color: #f0fff4; /* lighter green */
+        }
+
+        /* 配對錯誤的放置區 (短暫) */
+        .incorrect-drop {
+            animation: shake 0.5s;
+            border-color: #e53e3e; /* red */
+        }
+        
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-5px); }
+            75% { transform: translateX(5px); }
+        }
+
+        /* 成語卡片 */
+        .idiom-card {
+            touch-action: none; /* 禁用觸控捲動以啟用拖曳 */
+            user-select: none; /* 防止文字選取 */
+        }
+    </style>
+</head>
+<body class="bg-gray-100 font-sans antialiased" style="font-family: 'Inter', 'Noto Sans TC', sans-serif;">
+
+    <div class="container mx-auto max-w-7xl p-4 sm:p-8">
+        
+        <!-- 遊戲標題和控制按鈕 -->
+        <div class="flex flex-col sm:flex-row justify-between items-center mb-6">
+            <h1 class="text-3xl font-bold text-gray-800 mb-4 sm:mb-0">成語配對遊戲</h1>
+            <div class="flex space-x-4">
+                <div id="feedback-message" class="text-lg font-medium text-blue-600 self-center"></div>
+                <button id="reset-button" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-lg shadow transition-colors duration-300">
+                    重新開始
+                </button>
+            </div>
+        </div>
+
+        <!-- 遊戲說明 -->
+        <p class="text-gray-600 text-lg mb-6 text-center sm:text-left">
+            請將下方「成語庫」中的成語，拖曳到右側相對應的解釋旁邊的空白格子中。
+        </p>
+
+        <!-- 遊戲主要區域 -->
+        <div class="bg-white rounded-lg shadow-xl overflow-hidden">
+            
+            <!-- 配對區 -->
+            <div id="matching-area" class="p-6 sm:p-8 grid grid-cols-1 gap-4">
+                <!-- 內容將由 JavaScript 動態生成 -->
+            </div>
+
+            <!-- 成語庫 -->
+            <div class="bg-gray-50 p-6 border-t border-gray-200">
+                <h2 class="text-2xl font-semibold text-gray-700 mb-4 text-center">成語庫</h2>
+                <div id="idiom-bank" class="flex flex-wrap justify-center items-center gap-4 min-h-[80px]">
+                    <!-- 成語卡片將由 JavaScript 動態生成 -->
+                </div>
+            </div>
+
+        </div>
+
+        <!-- 遊戲完成提示 (預設隱藏) -->
+        <div id="completion-modal" class="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center hidden z-50">
+            <div class="bg-white p-12 rounded-lg shadow-2xl text-center transform scale-95 opacity-0 transition-all duration-300">
+                <h2 class="text-4xl font-bold text-green-600 mb-4">恭喜！</h2>
+                <p class="text-2xl text-gray-700 mb-8">您已成功配對所有成語！</p>
+                <button id="play-again-button" class="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-8 rounded-lg text-lg shadow transition-colors duration-300">
+                    再玩一次
+                </button>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+
+            // 1. 成語資料 (來自圖片)
+            const idiomData = [
+                { id: '1', idiom: '一目十行', definition: '形容閱讀速度十分快速。' },
+                { id: '2', idiom: '目不識丁', definition: '比喻不識字或毫無學問。' },
+                { id: '3', idiom: '耳目一新', definition: '形容所見所聞都有一種新奇、清新的感覺。' },
+                { id: '4.a', idiom: '目不轉睛', definition: '眼珠不轉地盯著看，形容注意力高度集中。' }, // 圖片有兩個4，用a/b區分
+                { id: '5', idiom: '眉開眼笑', definition: '形容愉快欣喜的神情。' },
+                { id: '6', idiom: '目瞪口呆', definition: '形容受驚或受窘以致神情痴呆的樣子。' },
+                { id: '7', idiom: '目中無人', definition: '形容非常自大。' },
+                { id: '8', idiom: '賞心悅目', definition: '形容情景美好，使心情都感到快樂舒暢。' },
+                { id: '9', idiom: '口蜜腹劍', definition: '比喻一個人說得好聽，內心險惡，處處想陷害別人。' },
+                { id: '10', idiom: '異口同聲', definition: '不同的人說出同樣的話，形容人們的意見完全一致。' }, // 修正：移除了 'id:G:' 中的 'G:'
+                { id: '11', idiom: '禍從口出', definition: '比喻說錯了話要惹禍，強調言語必須謹慎。' },
+                { id: '12', idiom: '啞口無言', definition: '形容遭人質問或駁斥時沉默不語或無言以對。' },
+                { id: '13', idiom: '苦口婆心', definition: '形容以懇切真摯的態度，竭力勸告他人。' },
+                { id: '14', idiom: '心平氣和', definition: '形容心情平靜，態度溫和。' },
+                { id: '15', idiom: '心服口服', definition: '心裏和嘴上都信服，形容真心服氣或認輸。' }
+            ];
+            
+            // 修正圖片中的編號錯誤 (有兩個 4，將其調整為 4 和 5，其餘順延)
+            // 實際遊戲中，我們使用自訂的 'id'，所以圖片的編號僅為參考。
+            // 為了保持資料的完整性，我們使用圖片上的文字，並自訂一組 15 個唯一的 ID。
+            const gameData = [
+                { id: 'idiom-1',  idiom: '一目十行', definition: '形容閱讀速度十分快速。' },
+                { id: 'idiom-2',  idiom: '目不識丁', definition: '比喻不識字或毫無學問。' },
+                { id: 'idiom-3',  idiom: '耳目一新', definition: '形容所見所聞都有一種新奇、清新的感覺。' },
+                { id: 'idiom-4',  idiom: '目不轉睛', definition: '眼珠不轉地盯著看，形容注意力高度集中。' },
+                { id: 'idiom-5',  idiom: '眉開眼笑', definition: '形容愉快欣喜的神情。' },
+                { id: 'idiom-6',  idiom: '目瞪口呆', definition: '形容受驚或受窘以致神情痴呆的樣子。' },
+                { id: 'idiom-7',  idiom: '目中無人', definition: '形容非常自大。' },
+                { id: 'idiom-8',  idiom: '賞心悅目', definition: '形容情景美好，使心情都感到快樂舒暢。' },
+                { id: 'idiom-9',  idiom: '口蜜腹劍', definition: '比喻一個人說得好聽，內心險惡，處處想陷害別人。' },
+                { id: 'idiom-10', idiom: '異口同聲', definition: '不同的人說出同樣的話，形容人們的意見完全一致。' },
+                { id: 'idiom-11', idiom: '禍從口出', definition: '比喻說錯了話要惹禍，強調言語必須謹慎。' },
+                { id: 'idiom-12', idiom: '啞口無言', definition: '形容遭人質問或駁斥時沉默不語或無言以對。' },
+                { id: 'idiom-13', idiom: '苦口婆心', definition: '形容以懇切真摯的態度，竭力勸告他人。' },
+                { id: 'idiom-14', idiom: '心平氣和', definition: '形容心情平靜，態度溫和。' },
+                { id: 'idiom-15', idiom: '心服口服', definition: '心裏和嘴上都信服，形容真心服氣或認輸。' }
+            ];
+
+            // 2. 獲取 DOM 元素
+            const matchingArea = document.getElementById('matching-area');
+            const idiomBank = document.getElementById('idiom-bank');
+            const resetButton = document.getElementById('reset-button');
+            const feedbackMessage = document.getElementById('feedback-message');
+            const completionModal = document.getElementById('completion-modal');
+            const playAgainButton = document.getElementById('play-again-button');
+
+            let currentlyDragging = null;
+            let matchedCount = 0;
+
+            // 3. 洗牌演算法 (Fisher-Yates)
+            function shuffleArray(array) {
+                let newArr = [...array];
+                for (let i = newArr.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [newArr[i], newArr[j]] = [newArr[j], newArr[i]];
+                }
+                return newArr;
+            }
+
+            // 4. 初始化遊戲
+            function initGame() {
+                // 清空遊戲區域
+                matchingArea.innerHTML = '';
+                idiomBank.innerHTML = '';
+                feedbackMessage.textContent = '';
+                
+                // 重設計數器
+                matchedCount = 0;
+                
+                // 隱藏完成提示
+                completionModal.classList.add('hidden');
+                completionModal.firstElementChild.classList.add('scale-95', 'opacity-0');
+
+                // 獲取隨機排列的成語 (用於成語庫)
+                const shuffledIdioms = shuffleArray(gameData);
+
+                // 創建配對區 (定義 + 放置區)
+                // 我們使用固定的 gameData 順序來顯示定義，以保持一致性
+                gameData.forEach((item, index) => {
+                    const row = document.createElement('div');
+                    row.className = 'grid grid-cols-1 md:grid-cols-3 gap-2 items-center';
+                    
+                    // 解釋
+                    const definitionDiv = document.createElement('div');
+                    definitionDiv.className = 'bg-gray-100 p-4 rounded-lg text-gray-700 text-lg';
+                    definitionDiv.innerHTML = `<span class="font-bold text-gray-500 mr-2">${index + 1}.</span> ${item.definition}`;
+
+                    // 放置區
+                    const dropZone = document.createElement('div');
+                    dropZone.className = 'drop-zone border-2 border-dashed border-gray-400 rounded-lg h-16 md:h-full min-h-[64px] flex justify-center items-center transition-all duration-300';
+                    dropZone.dataset.id = item.id; // 綁定正確的 ID
+
+                    // 為放置區添加拖曳事件
+                    addDropZoneEvents(dropZone);
+                    
+                    row.appendChild(definitionDiv);
+                    // 在中型螢幕上，將放置區放在第三欄
+                    const emptySpacer = document.createElement('div');
+                    emptySpacer.className = 'hidden md:block'; // 在中型螢幕上佔位
+                    row.appendChild(emptySpacer);
+
+                    row.appendChild(dropZone);
+
+                    matchingArea.appendChild(row);
+                });
+                
+                // 創建成語庫 (可拖曳的成語)
+                shuffledIdioms.forEach(item => {
+                    const card = document.createElement('div');
+                    card.className = 'idiom-card bg-white p-4 rounded-lg shadow cursor-move border-2 border-transparent select-none';
+                    card.textContent = item.idiom;
+                    card.draggable = true;
+                    card.dataset.id = item.id; // 綁定 ID
+                    
+                    // 為成語卡片添加拖曳事件
+                    addCardEvents(card);
+                    
+                    idiomBank.appendChild(card);
+                });
+            }
+
+            // 5. 為成語卡片添加事件
+            function addCardEvents(card) {
+                card.addEventListener('dragstart', (e) => {
+                    currentlyDragging = card;
+                    e.dataTransfer.setData('text/plain', card.dataset.id);
+                    e.dataTransfer.effectAllowed = 'move';
+                    // 使用 setTimeout 確保 'dragging' class 在拖曳影像擷取後才套用
+                    setTimeout(() => card.classList.add('dragging'), 0);
+                    feedbackMessage.textContent = '拖曳中...';
+                });
+                
+                card.addEventListener('dragend', () => {
+                    if (currentlyDragging) {
+                        currentlyDragging.classList.remove('dragging');
+                    }
+                    currentlyDragging = null;
+                    feedbackMessage.textContent = '';
+                });
+            }
+            
+            // 6. 為放置區添加事件
+            function addDropZoneEvents(zone) {
+                zone.addEventListener('dragover', (e) => {
+                    e.preventDefault(); // 必須，才能觸發 drop 事件
+                    e.dataTransfer.dropEffect = 'move';
+                    if (!zone.classList.contains('matched-zone')) {
+                        zone.classList.add('drag-over');
+                    }
+                });
+                
+                zone.addEventListener('dragleave', () => {
+                    zone.classList.remove('drag-over');
+                });
+                
+                zone.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    zone.classList.remove('drag-over');
+                    
+                    const draggedId = e.dataTransfer.getData('text/plain');
+                    const targetId = zone.dataset.id;
+                    
+                    if (draggedId === targetId) {
+                        // --- 配對正確 ---
+                        
+                        // 1. 將卡片移入放置區
+                        zone.innerHTML = ''; // 清空 (如果裡面有東西)
+                        zone.appendChild(currentlyDragging);
+                        
+                        // 2. 更新樣式
+                        zone.classList.add('matched-zone');
+                        currentlyDragging.classList.add('matched-card');
+                        
+                        // 3. 移除事件監聽，使其不可再拖曳或放置
+                        currentlyDragging.draggable = false;
+                        currentlyDragging.classList.remove('dragging', 'cursor-move');
+                        currentlyDragging = null;
+                        
+                        // 移除放置區的事件
+                        zone.removeEventListener('dragover', addDropZoneEvents);
+                        zone.removeEventListener('dragleave', addDropZoneEvents);
+                        zone.removeEventListener('drop', addDropZoneEvents);
+                        
+                        // 4. 更新反饋
+                        feedbackMessage.textContent = '配對成功！';
+                        feedbackMessage.className = 'text-lg font-medium text-green-600';
+                        setTimeout(() => {
+                           if (feedbackMessage.textContent === '配對成功！') {
+                               feedbackMessage.textContent = '';
+                           }
+                        }, 2000);
+                        
+                        // 5. 檢查是否遊戲完成
+                        matchedCount++;
+                        if (matchedCount === gameData.length) {
+                            showCompletionModal();
+                        }
+                        
+                    } else {
+                        // --- 配對錯誤 ---
+                        feedbackMessage.textContent = '配對錯誤，請再試一次！';
+                        feedbackMessage.className = 'text-lg font-medium text-red-600';
+                        
+                        zone.classList.add('incorrect-drop');
+                        
+                        setTimeout(() => {
+                            feedbackMessage.textContent = '';
+                            zone.classList.remove('incorrect-drop');
+                        }, 1000);
+                    }
+                });
+            }
+            
+            // 7. 顯示遊戲完成提示
+            function showCompletionModal() {
+                completionModal.classList.remove('hidden');
+                // 使用小延遲來觸發 CSS transition
+                setTimeout(() => {
+                    completionModal.firstElementChild.classList.remove('scale-95', 'opacity-0');
+                    completionModal.firstElementChild.classList.add('scale-100', 'opacity-100');
+                }, 50);
+            }
+
+            // 8. 綁定按鈕事件
+            resetButton.addEventListener('click', initGame);
+            playAgainButton.addEventListener('click', initGame);
+
+            // 9. 啟動遊戲
+            initGame();
+        });
+    </script>
+</body>
+</html>
